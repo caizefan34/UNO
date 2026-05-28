@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNO - 多人在线游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(ellipse at center, #0d7a45 0%, #064e2a 50%, #032212 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            text-align: center;
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            max-width: 500px;
+        }
+        h1 {
+            font-size: 4em;
+            margin-bottom: 10px;
+            text-shadow: 3px 3px 0 #e63946, 6px 6px 0 #f4a261, 9px 9px 0 #e9c46a;
+            letter-spacing: 8px;
+            animation: titlePulse 2s ease-in-out infinite;
+        }
+        @keyframes titlePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+        .subtitle {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        .description {
+            font-size: 1em;
+            margin-bottom: 30px;
+            opacity: 0.85;
+            line-height: 1.6;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 40px;
+            background: linear-gradient(135deg, #e63946, #c1121f);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            margin: 10px;
+            transition: all 0.3s ease;
+            border: 2px solid #e63946;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(230, 57, 70, 0.4);
+            background: linear-gradient(135deg, #c1121f, #9d0208);
+        }
+        .btn:active {
+            transform: translateY(-1px);
+        }
+        .features {
+            margin-top: 30px;
+            text-align: left;
+            display: inline-block;
+        }
+        .features li {
+            margin: 8px 0;
+            opacity: 0.85;
+        }
+        .features li::before {
+            content: "✓ ";
+            color: #2a9d8f;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 UNO</h1>
+        <p class="subtitle">多人在线游戏</p>
+        
+        <p class="description">
+            欢迎来到 UNO 多人在线游戏平台！
+            与朋友们在线畅玩这个经典的纸牌游戏。
+        </p>
+
+        <ul class="features">
+            <li>实时多人对战</li>
+            <li>精美的游戏界面</li>
+            <li>支持在线聊天</li>
+            <li>房间管理系统</li>
+        </ul>
+
+        <br>
+        <a href="uno-game.html" class="btn">开始游戏</a>
+    </div>
+</body>
+</html>
