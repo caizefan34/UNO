@@ -450,101 +450,29 @@ html, body {
 </div>
 
 <script>
-const WS_URL = `ws://${location.hostname}:3456`;
-let ws = null;
-let playerId = null;
-let roomCode = null;
-let myHand = [];
-let gameData = null;
-let isMyTurn = false;
+// ====== GAME STATE ====== 
+let gameState = {
+    players: [],
+    currentPlayer: 0,
+    topCard: { value: 'U', color: 'red' },
+    drawCount: 0,
+    yourHand: [],
+    roomCode: '',
+    playerId: generatePlayerId(),
+    gameStatus: 'lobby' // lobby, waiting, playing, gameOver
+};
+
 let selectedCard = -1;
 let pendingWildCard = -1;
 let chatVisible = false;
 
-function connect() {
-    ws = new WebSocket(WS_URL);
-    ws.onopen = () => console.log('Connected');
-    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
-    ws.onclose = () => {
-        console.log('Disconnected');
-        setTimeout(connect, 2000);
-    };
-    ws.onerror = () => console.log('Connection error');
+// ====== HELPER FUNCTIONS ======
+function generatePlayerId() {
+    return 'p_' + Math.random().toString(36).substr(2, 9);
 }
 
-function send(data) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
-}
-
-function handleMessage(msg) {
-    switch (msg.type) {
-        case 'room_created':
-        case 'room_joined':
-            playerId = msg.playerId;
-            roomCode = msg.code;
-            showGameBoard();
-            document.getElementById('room-code-display').textContent = roomCode;
-            break;
-
-        case 'game_state':
-            gameData = msg;
-            updateGameDisplay(msg);
-            break;
-
-        case 'game_started':
-            document.getElementById('waiting-actions').style.display = 'none';
-            document.getElementById('turn-banner').textContent = '游戏开始!';
-            break;
-
-        case 'turn_changed':
-            isMyTurn = msg.playerId === playerId;
-            updateTurnBanner(msg.playerId);
-            break;
-
-        case 'card_played':
-            animateCardToDiscard(msg.card);
-            break;
-
-        case 'card_drawn':
-            break;
-
-        case 'need_color':
-            pendingWildCard = msg.cardIndex;
-            document.getElementById('color-picker-overlay').classList.add('show');
-            break;
-
-        case 'timer_update':
-            updateTimer(msg.timeLeft);
-            break;
-
-        case 'player_uno':
-            showUnoBadge(msg.playerId);
-            break;
-
-        case 'chat':
-            addChatMessage(msg);
-            break;
-
-        case 'game_over':
-            showGameOver(msg);
-            break;
-
-        case 'game_restart':
-            document.getElementById('game-over-overlay').classList.remove('show');
-            document.getElementById('waiting-actions').style.display = 'none';
-            break;
-
-        case 'player_joined':
-        case 'player_left':
-            break;
-
-        case 'can_play_drawn':
-            break;
-
-        case 'error':
-            showError(msg.message);
-            break;
-    }
+function generateRoomCode() {
+    return Math.random().toString(36).substr(2, 5).toUpperCase();
 }
 
 function getCardColorClass(card) {
@@ -562,45 +490,124 @@ function getCardDisplay(card) {
     return { symbol: val, label: '' };
 }
 
-function updateGameDisplay(state) {
-    if (!state) return;
-
-    const topCard = state.topCard;
-    const dc = document.getElementById('discard-card');
-    if (topCard) {
-        dc.className = 'discard-pile-card ' + getCardColorClass(topCard);
-        const disp = getCardDisplay(topCard);
-        dc.innerHTML = `<div class="card-symbol">${disp.symbol}</div><div class="card-small-text">${disp.label}</div>`;
-    }
-
-    document.getElementById('draw-count').textContent = state.drawCount > 0 ? `剩余${state.drawCount}张` : '';
-
-    renderPlayers(state);
-    renderHand(state);
-    updateMyTurn(state);
-
-    const totalPlayers = state.players?.length || 0;
-    if (totalPlayers >= 2 && state.state === 'waiting') {
-        const isHost = state.players?.find(p => p.id === playerId)?.isHost;
-        if (isHost) {
-            document.getElementById('waiting-actions').style.display = 'flex';
-        }
-    }
-
-    if (state.state === 'playing' && state.currentTurn !== undefined) {
-        const cp = state.players[state.currentTurn];
-        isMyTurn = cp?.id === playerId;
-        updateTurnBanner(cp?.id);
-    }
+// ====== ROOM MANAGEMENT ======
+function createRoom() {
+    const name = document.getElementById('name-input').value.trim() || '玩家' + Math.floor(Math.random() * 1000);
+    document.getElementById('name-input').value = name;
+    
+    gameState.roomCode = generateRoomCode();
+    gameState.players = [{
+        id: gameState.playerId,
+        name: name,
+        cardCount: 7,
+        isHost: true,
+        calledUno: false
+    }];
+    
+    document.getElementById('lobby-error').textContent = '';
+    showGameBoard();
+    updateGameDisplay();
+    
+    // 在控制台显示房间码
+    console.log('✅ 房间已创建！房间码: ' + gameState.roomCode);
+    showError('房间已创建！房间码: ' + gameState.roomCode);
 }
 
-function renderPlayers(state) {
-    if (!state?.players) return;
+function joinRoom() {
+    const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+    if (code.length !== 5) {
+        document.getElementById('lobby-error').textContent = '请输入5位房间码';
+        return;
+    }
+    const name = document.getElementById('name-input').value.trim() || '玩家' + Math.floor(Math.random() * 1000);
+    document.getElementById('name-input').value = name;
+    
+    // 模拟加入房间
+    gameState.roomCode = code;
+    gameState.players.push({
+        id: gameState.playerId,
+        name: name,
+        cardCount: 7,
+        isHost: false,
+        calledUno: false
+    });
+    
+    document.getElementById('lobby-error').textContent = '';
+    showGameBoard();
+    updateGameDisplay();
+    
+    showError('✅ 成功加入房间！');
+}
+
+function leaveRoom() {
+    showLobby();
+    gameState = {
+        players: [],
+        currentPlayer: 0,
+        topCard: { value: 'U', color: 'red' },
+        drawCount: 0,
+        yourHand: [],
+        roomCode: '',
+        playerId: generatePlayerId(),
+        gameStatus: 'lobby'
+    };
+}
+
+// ====== UI STATE MANAGEMENT ======
+function showGameBoard() {
+    gameState.gameStatus = 'waiting';
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('game-board').style.display = 'flex';
+    document.getElementById('room-code-display').textContent = gameState.roomCode;
+    document.getElementById('toggle-chat-btn').style.display = 'block';
+    document.getElementById('chat-panel').style.display = 'none';
+    chatVisible = false;
+}
+
+function showLobby() {
+    gameState.gameStatus = 'lobby';
+    document.getElementById('lobby').style.display = 'flex';
+    document.getElementById('game-board').style.display = 'none';
+    document.getElementById('toggle-chat-btn').style.display = 'none';
+    document.getElementById('chat-panel').style.display = 'none';
+    document.getElementById('game-over-overlay').classList.remove('show');
+}
+
+function showError(msg) {
+    const el = document.getElementById('lobby-error');
+    el.textContent = msg;
+    setTimeout(() => {
+        if (gameState.gameStatus === 'lobby') el.textContent = '';
+    }, 5000);
+}
+
+// ====== GAME DISPLAY ======
+function updateGameDisplay() {
+    updateTopCard();
+    renderPlayers();
+    renderHand();
+    updateTurnBanner();
+    updatePlayStartButton();
+}
+
+function updateTopCard() {
+    const dc = document.getElementById('discard-card');
+    const card = gameState.topCard;
+    dc.className = 'discard-pile-card ' + getCardColorClass(card);
+    const disp = getCardDisplay(card);
+    dc.innerHTML = `<div class="card-symbol">${disp.symbol}</div><div class="card-small-text">${disp.label}</div>`;
+    
+    document.getElementById('draw-count').textContent = gameState.drawCount > 0 ? `剩余${gameState.drawCount}张` : '';
+}
+
+function renderPlayers() {
     const container = document.getElementById('players-area');
-    container.innerHTML = state.players.map((p, i) => {
+    const isPlaying = gameState.gameStatus === 'playing';
+    
+    container.innerHTML = gameState.players.map((p, i) => {
         let cls = 'player-slot';
-        if (state.state === 'playing' && i === state.currentTurn) cls += ' active-turn';
-        if (p.id === playerId) cls += ' you';
+        if (isPlaying && i === gameState.currentPlayer) cls += ' active-turn';
+        if (p.id === gameState.playerId) cls += ' you';
         const colors = ['#e63946','#457b9d','#2a9d8f','#e9c46a','#9b59b6','#e67e22'];
         const initials = p.name.slice(0, 2).toUpperCase();
         return `
@@ -613,16 +620,13 @@ function renderPlayers(state) {
     }).join('');
 }
 
-function renderHand(state) {
-    if (!state?.yourHand) { myHand = []; return; }
-    myHand = state.yourHand;
+function renderHand() {
     const container = document.getElementById('hand-container');
-    const topCard = state.topCard;
-    const isMyTurnNow = state.state === 'playing' && state.players?.[state.currentTurn]?.id === playerId;
-
-    container.innerHTML = myHand.map((card, i) => {
+    const isMyTurn = gameState.gameStatus === 'playing' && gameState.currentPlayer === gameState.players.findIndex(p => p.id === gameState.playerId);
+    
+    container.innerHTML = gameState.yourHand.map((card, i) => {
         let cls = 'uno-card ' + getCardColorClass(card);
-        if (!isMyTurnNow) cls += ' unplayable';
+        if (!isMyTurn) cls += ' unplayable';
         if (i === selectedCard) cls += ' selected';
         const disp = getCardDisplay(card);
         return `
@@ -631,65 +635,60 @@ function renderHand(state) {
                 <div class="card-inner-label">${disp.label}</div>
             </div>`;
     }).join('');
-
+    
     const unoBtn = document.getElementById('uno-btn');
-    if (myHand.length === 2 && state.state === 'playing') {
+    if (gameState.yourHand.length === 2 && gameState.gameStatus === 'playing') {
         unoBtn.disabled = false;
-    } else if (myHand.length !== 2) {
+    } else {
         unoBtn.disabled = true;
     }
 }
 
-function updateMyTurn(state) {
-    if (state?.state !== 'playing') {
-        document.getElementById('draw-pile').style.pointerEvents = 'none';
-        return;
-    }
-    const isMyTurnNow = state.players?.[state.currentTurn]?.id === playerId;
-    isMyTurn = isMyTurnNow;
-    document.getElementById('draw-pile').style.pointerEvents = isMyTurnNow ? 'auto' : 'none';
-    renderHand(state);
-}
-
-function updateTurnBanner(turnPlayerId) {
+function updateTurnBanner() {
     const banner = document.getElementById('turn-banner');
-    const gameDataLocal = gameData;
-    if (!gameDataLocal?.players) return;
-    const cp = gameDataLocal.players.find(p => p.id === turnPlayerId);
-    if (!cp) return;
-
-    if (turnPlayerId === playerId) {
-        banner.textContent = '⭐ 轮到你了！选择一张牌出牌或抽牌';
-        banner.className = 'turn-banner your-turn';
-    } else {
-        banner.textContent = `⏳ 等待 ${cp.name} 出牌...`;
+    
+    if (gameState.gameStatus === 'waiting') {
+        banner.textContent = '⏳ 等待其他玩家加入...';
         banner.className = 'turn-banner';
+    } else if (gameState.gameStatus === 'playing') {
+        const currentPlayerObj = gameState.players[gameState.currentPlayer];
+        if (currentPlayerObj?.id === gameState.playerId) {
+            banner.textContent = '⭐ 轮到你了！选择一张牌出牌或抽牌';
+            banner.className = 'turn-banner your-turn';
+        } else {
+            banner.textContent = `⏳ 等待 ${currentPlayerObj?.name || '玩家'} 出牌...`;
+            banner.className = 'turn-banner';
+        }
     }
 }
 
-function updateTimer(timeLeft) {
-    const el = document.getElementById('timer-display');
-    el.textContent = `⏱ ${timeLeft}s`;
-    if (timeLeft <= 10) el.classList.add('timer-warning');
-    else el.classList.remove('timer-warning');
+function updatePlayStartButton() {
+    const btn = document.getElementById('start-game-btn');
+    const waitingActions = document.getElementById('waiting-actions');
+    const isHost = gameState.players.find(p => p.id === gameState.playerId)?.isHost;
+    
+    if (gameState.gameStatus === 'waiting' && isHost && gameState.players.length >= 2) {
+        waitingActions.style.display = 'flex';
+    } else {
+        waitingActions.style.display = 'none';
+    }
 }
 
+// ====== GAME ACTIONS ======
 function selectCard(index, event) {
+    const isMyTurn = gameState.gameStatus === 'playing' && gameState.currentPlayer === gameState.players.findIndex(p => p.id === gameState.playerId);
     if (!isMyTurn) return;
-    if (index < 0 || index >= myHand.length) return;
-
-    const card = myHand[index];
+    
+    const card = gameState.yourHand[index];
     if (card.color === 'wild') {
         pendingWildCard = index;
         document.getElementById('color-picker-overlay').classList.add('show');
         return;
     }
-
+    
     selectedCard = index;
-    renderHand(gameData);
-    setTimeout(() => {
-        playCard(index, null);
-    }, 200);
+    renderHand();
+    setTimeout(() => playCard(index, null), 200);
 }
 
 function pickColor(color) {
@@ -698,142 +697,86 @@ function pickColor(color) {
         const idx = pendingWildCard;
         pendingWildCard = -1;
         selectedCard = idx;
-        renderHand(gameData);
+        renderHand();
         setTimeout(() => playCard(idx, color), 150);
     }
 }
 
 function playCard(index, chosenColor) {
-    send({ type: 'play_card', cardIndex: index, chosenColor });
+    if (index < 0 || index >= gameState.yourHand.length) return;
+    
+    const card = gameState.yourHand[index];
+    const playedCard = { ...card, chosenColor };
+    
+    // 移除出牌的卡
+    gameState.yourHand.splice(index, 1);
+    gameState.topCard = playedCard;
+    
+    // 下一个玩家轮流
+    nextTurn();
+    
     selectedCard = -1;
     pendingWildCard = -1;
+    updateGameDisplay();
 }
 
 function drawCard() {
+    const isMyTurn = gameState.gameStatus === 'playing' && gameState.currentPlayer === gameState.players.findIndex(p => p.id === gameState.playerId);
     if (!isMyTurn) return;
-    send({ type: 'draw_card' });
+    
+    // 模拟抽牌
+    const newCard = generateRandomCard();
+    gameState.yourHand.push(newCard);
+    
+    // 下一个玩家
+    nextTurn();
+    updateGameDisplay();
+}
+
+function nextTurn() {
+    gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
 }
 
 function callUno() {
-    send({ type: 'call_uno' });
+    const myIndex = gameState.players.findIndex(p => p.id === gameState.playerId);
+    if (myIndex >= 0) {
+        gameState.players[myIndex].calledUno = true;
+    }
+    renderPlayers();
 }
 
 function startGame() {
-    send({ type: 'start_game' });
+    gameState.gameStatus = 'playing';
+    gameState.currentPlayer = 0;
+    
+    // 初始化玩家手牌
+    gameState.players.forEach(p => p.cardCount = 7);
+    gameState.yourHand = [
+        generateRandomCard(),
+        generateRandomCard(),
+        generateRandomCard(),
+        generateRandomCard(),
+        generateRandomCard(),
+        generateRandomCard(),
+        generateRandomCard()
+    ];
+    
+    document.getElementById('waiting-actions').style.display = 'none';
+    document.getElementById('turn-banner').textContent = '游戏开始!';
+    
+    updateGameDisplay();
 }
 
-function createRoom() {
-    const name = document.getElementById('name-input').value.trim() || '玩家' + Math.floor(Math.random() * 1000);
-    document.getElementById('name-input').value = name;
-    send({ type: 'create_room', name });
-    document.getElementById('lobby-error').textContent = '';
+// ====== HELPER FUNCTIONS ======
+function generateRandomCard() {
+    const colors = ['red', 'blue', 'green', 'yellow'];
+    const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', 'draw2'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const randomValue = values[Math.floor(Math.random() * values.length)];
+    return { color: randomColor, value: randomValue };
 }
 
-function joinRoom() {
-    const code = document.getElementById('room-code-input').value.trim().toUpperCase();
-    if (code.length !== 5) {
-        document.getElementById('lobby-error').textContent = '请输入5位房间码';
-        return;
-    }
-    const name = document.getElementById('name-input').value.trim() || '玩家' + Math.floor(Math.random() * 1000);
-    document.getElementById('name-input').value = name;
-    send({ type: 'join_room', code, name });
-    document.getElementById('lobby-error').textContent = '';
-}
-
-function leaveRoom() {
-    if (ws) ws.close();
-    ws = null;
-    showLobby();
-    setTimeout(connect, 500);
-}
-
-function showGameBoard() {
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('game-board').style.display = 'flex';
-    document.getElementById('toggle-chat-btn').style.display = 'block';
-    document.getElementById('chat-panel').style.display = 'none';
-    chatVisible = false;
-}
-
-function showLobby() {
-    document.getElementById('lobby').style.display = 'flex';
-    document.getElementById('game-board').style.display = 'none';
-    document.getElementById('toggle-chat-btn').style.display = 'none';
-    document.getElementById('chat-panel').style.display = 'none';
-    document.getElementById('game-over-overlay').classList.remove('show');
-    playerId = null;
-    roomCode = null;
-    myHand = [];
-    gameData = null;
-    isMyTurn = false;
-}
-
-function showError(msg) {
-    const el = document.getElementById('lobby-error');
-    el.textContent = msg;
-    setTimeout(() => el.textContent = '', 3000);
-}
-
-function showUnoBadge(playerId) {
-    setTimeout(() => {
-        if (gameData?.players) {
-            renderPlayers(gameData);
-        }
-    }, 100);
-}
-
-function animateCardToDiscard(card) {
-    const dc = document.getElementById('discard-card');
-    const colorCls = getCardColorClass(card);
-    const disp = getCardDisplay(card);
-    dc.className = 'discard-pile-card ' + colorCls;
-    dc.innerHTML = `<div class="card-symbol">${disp.symbol}</div><div class="card-small-text">${disp.label}</div>`;
-    dc.style.animation = 'none';
-    dc.offsetHeight;
-    dc.style.animation = 'cardFlyIn 0.5s ease-out';
-}
-
-function showGameOver(msg) {
-    const overlay = document.getElementById('game-over-overlay');
-    const card = document.getElementById('game-over-card');
-    const isWinner = msg.winnerId === playerId;
-
-    let scoresHtml = '<table class="score-table">';
-    if (msg.scores) {
-        for (const [pid, score] of Object.entries(msg.scores)) {
-            const p = gameData?.players?.find(pl => pl.id === pid);
-            scoresHtml += `<tr><td>${p?.name || pid}</td><td style="color:#e9c46a">${score} 分</td></tr>`;
-        }
-    }
-    scoresHtml += '</table>';
-
-    let totalHtml = '';
-    if (msg.totalScores) {
-        totalHtml = '<h4 style="margin-top:8px;">累计得分</h4><table class="score-table">';
-        for (const [pid, total] of Object.entries(msg.totalScores)) {
-            const p = gameData?.players?.find(pl => pl.id === pid);
-            totalHtml += `<tr><td>${p?.name || pid}</td><td style="color:#2a9d8f">${total} 分</td></tr>`;
-        }
-        totalHtml += '</table>';
-    }
-
-    card.innerHTML = `
-        <h2>${isWinner ? '🎉 你赢了！' : '🏁 游戏结束'}</h2>
-        <div class="winner-name">🥇 ${msg.winnerName}</div>
-        ${scoresHtml}
-        ${totalHtml}
-        <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;">
-            <button class="btn btn-success btn-small" onclick="playAgain()">🔄 再来一局</button>
-        </div>
-    `;
-    overlay.classList.add('show');
-}
-
-function playAgain() {
-    send({ type: 'play_again' });
-}
-
+// ====== CHAT FUNCTIONS ======
 function toggleChat() {
     chatVisible = !chatVisible;
     document.getElementById('chat-panel').style.display = chatVisible ? 'flex' : 'none';
@@ -844,7 +787,9 @@ function sendChat() {
     const input = document.getElementById('chat-input');
     const msg = input.value.trim();
     if (!msg) return;
-    send({ type: 'chat', message: msg });
+    
+    const playerName = gameState.players.find(p => p.id === gameState.playerId)?.name || '玩家';
+    addChatMessage({ playerId: gameState.playerId, name: playerName, message: msg });
     input.value = '';
 }
 
@@ -861,10 +806,10 @@ function addChatMessage(msg) {
     container.scrollTop = container.scrollHeight;
 }
 
-connect();
-
+// ====== INITIALIZATION ======
 const savedName = localStorage.getItem('uno_nickname');
 if (savedName) document.getElementById('name-input').value = savedName;
+
 document.getElementById('name-input').addEventListener('change', (e) => {
     localStorage.setItem('uno_nickname', e.target.value);
 });
@@ -872,6 +817,8 @@ document.getElementById('name-input').addEventListener('change', (e) => {
 document.getElementById('room-code-input').addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
 });
+
+console.log('🎮 UNO 游戏已加载！点击"创建房间"或"加入房间"开始游戏。');
 </script>
 </body>
 </html>
